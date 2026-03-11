@@ -300,7 +300,6 @@ func (cs *CronService) executeJobByID(jobID string) {
 
 func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int64 {
 	switch schedule.Kind {
-
 	case "at":
 		if schedule.AtMS != nil && *schedule.AtMS > nowMS {
 			return schedule.AtMS
@@ -331,7 +330,6 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 		log.Printf("[cron] unknown schedule kind '%s'", schedule.Kind)
 		return nil
 	}
-
 }
 
 func (cs *CronService) recomputeNextRuns() {

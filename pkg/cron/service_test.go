@@ -186,7 +186,7 @@ func TestCronService_PersistenceIntegrity(t *testing.T) {
 	}
 
 	// test loading invalid JSON
-	os.WriteFile(tmpFile, []byte("{invalid json}"), 0644)
+	os.WriteFile(tmpFile, []byte("{invalid json}"), 0o644)
 	cs3 := NewCronService(tmpFile, nil)
 	err := cs3.loadStore()
 	if err == nil {
