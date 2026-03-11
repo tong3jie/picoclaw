@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -87,7 +88,6 @@ func WithRetry(maxRetries int, minWait, maxWait time.Duration) Option {
 }
 
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
-
 	retryClient := retryablehttp.NewClient()
 	retryClient.RetryMax = 3
 	retryClient.RetryWaitMin = 1 * time.Second
@@ -97,7 +97,6 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 
 	transport := &http.Transport{}
 	if proxy != "" {
-
 		if parsed, err := url.Parse(proxy); err == nil {
 			transport.Proxy = http.ProxyURL(parsed)
 		} else {
@@ -113,6 +112,8 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: retryClient.StandardClient(),
 	}
+
+	p.httpClient.Timeout = defaultRequestTimeout
 
 	for _, opt := range opts {
 		if opt != nil {
@@ -236,7 +237,7 @@ func (p *Provider) Chat(
 		)
 	}
 
-	//set response size limit to prevent OOM if server returns a huge response (e.g., an HTML error page instead of JSON)
+	// set response size limit to prevent OOM if server returns a huge response (e.g., an HTML error page instead of JSON)
 	const maxResponseSize = 10 * 1024 * 1024
 
 	// Peek without consuming so the full stream reaches the JSON decoder.
@@ -268,7 +269,9 @@ func (p *Provider) resolveMaxTokenField(model string) string {
 	}
 
 	lowerModel := strings.ToLower(model)
-	if strings.Contains(lowerModel, "o1") || strings.Contains(lowerModel, "glm-4") || strings.Contains(lowerModel, "gpt-5") {
+	if strings.Contains(lowerModel, "o1") ||
+		strings.Contains(lowerModel, "glm-4") ||
+		strings.Contains(lowerModel, "gpt-5") {
 		return "max_completion_tokens"
 	}
 	return "max_tokens"
