@@ -74,6 +74,7 @@ func NewCronService(storePath string, onJob JobHandler) *CronService {
 		storePath: storePath,
 		onJob:     onJob,
 		gronx:     gronx.New(),
+		wakeChan:  make(chan struct{}),
 	}
 	// Initialize and load store on creation
 	cs.loadStore()
@@ -98,7 +99,9 @@ func (cs *CronService) Start() error {
 	}
 
 	cs.stopChan = make(chan struct{})
-	cs.wakeChan = make(chan struct{})
+	if cs.wakeChan == nil {
+		cs.wakeChan = make(chan struct{})
+	}
 	cs.running = true
 	go cs.runLoop(cs.stopChan)
 
@@ -332,6 +335,15 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 	}
 }
 
+// wake up the loop to re-evaluate next wake time immediately (e.g. after add/update/remove jobs)
+func (cs *CronService) notify() {
+	select {
+	case cs.wakeChan <- struct{}{}:
+	default:
+		// if the channel is full, it means the loop will wake up soon anyway, so we can skip sending
+	}
+}
+
 func (cs *CronService) recomputeNextRuns() {
 	now := time.Now().UnixMilli()
 	for i := range cs.store.Jobs {
@@ -433,10 +445,7 @@ func (cs *CronService) AddJob(
 		return nil, err
 	}
 
-	select {
-	case cs.wakeChan <- struct{}{}:
-	default:
-	}
+	cs.notify()
 
 	return &job, nil
 }
@@ -450,10 +459,7 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 			cs.store.Jobs[i] = *job
 			cs.store.Jobs[i].UpdatedAtMS = time.Now().UnixMilli()
 
-			select {
-			case cs.wakeChan <- struct{}{}:
-			default:
-			}
+			cs.notify()
 
 			return cs.saveStoreUnsafe()
 		}
@@ -485,6 +491,8 @@ func (cs *CronService) removeJobUnsafe(jobID string) bool {
 		}
 	}
 
+	cs.notify()
+
 	return removed
 }
 
@@ -507,6 +515,9 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 			if err := cs.saveStoreUnsafe(); err != nil {
 				log.Printf("[cron] failed to save store after enable: %v", err)
 			}
+
+			cs.notify()
+
 			return job
 		}
 	}

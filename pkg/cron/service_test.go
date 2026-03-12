@@ -214,6 +214,7 @@ func TestCronService_ConcurrentAccess(t *testing.T) {
 			for j := range iterations {
 				at := time.Now().Add(time.Hour).UnixMilli()
 				cs.AddJob(fmt.Sprintf("Job-%d-%d", id, j), CronSchedule{Kind: "at", AtMS: &at}, "", false, "", "")
+				time.Sleep(100 * time.Microsecond)
 			}
 		}(i)
 	}
@@ -227,7 +228,7 @@ func TestCronService_ConcurrentAccess(t *testing.T) {
 				if len(jobs) > 0 {
 					cs.EnableJob(jobs[0].ID, j%2 == 0)
 				}
-				time.Sleep(1 * time.Millisecond)
+				time.Sleep(100 * time.Microsecond)
 			}
 		}()
 	}
