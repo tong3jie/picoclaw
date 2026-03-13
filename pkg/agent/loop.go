@@ -251,12 +251,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
-			msg, ok := al.bus.ConsumeInbound(ctx)
-			if !ok {
-				continue
-			}
-
+		case msg := <-al.bus.InboundChan():
 			// Process message
 			func() {
 				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
@@ -312,6 +307,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					}
 				}
 			}()
+		default:
 		}
 	}
 
