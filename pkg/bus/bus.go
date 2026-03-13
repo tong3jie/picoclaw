@@ -18,9 +18,11 @@ type MessageBus struct {
 	inbound       chan InboundMessage
 	outbound      chan OutboundMessage
 	outboundMedia chan OutboundMediaMessage
-	done          chan struct{}
-	closed        atomic.Bool
-	wg            sync.WaitGroup
+
+	closeOnce sync.Once
+	done      chan struct{}
+	closed    atomic.Bool
+	wg        sync.WaitGroup
 }
 
 func NewMessageBus() *MessageBus {
@@ -32,132 +34,89 @@ func NewMessageBus() *MessageBus {
 	}
 }
 
-func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
-	mb.wg.Add(1)
-	defer mb.wg.Done()
-
+func publish[T any](ctx context.Context, mb *MessageBus, ch chan T, msg T) error {
+	// check bus closed before acquiring wg, to avoid unnecessary wg.Add and potential deadlock
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+
+	// check again,before sending message, to avoid sending to closed channel
 	select {
-	case mb.inbound <- msg:
-		return nil
-	case <-mb.done:
-		return ErrBusClosed
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-mb.done:
+		return ErrBusClosed
+	default:
+	}
+
+	mb.wg.Add(1)
+	defer mb.wg.Done()
+
+	select {
+	case ch <- msg:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-mb.done:
+		return ErrBusClosed
 	}
 }
 
-func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
-	select {
-	case msg, ok := <-mb.inbound:
-		return msg, ok
-	case <-mb.done:
-		return InboundMessage{}, false
-	case <-ctx.Done():
-		return InboundMessage{}, false
-	}
+func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
+	return publish(ctx, mb, mb.inbound, msg)
+}
+
+func (mb *MessageBus) InboundChan() <-chan InboundMessage {
+	return mb.inbound
 }
 
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
-	mb.wg.Add(1)
-	defer mb.wg.Done()
-
-	if mb.closed.Load() {
-		return ErrBusClosed
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	select {
-	case mb.outbound <- msg:
-		return nil
-	case <-mb.done:
-		return ErrBusClosed
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return publish(ctx, mb, mb.outbound, msg)
 }
 
-func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
-	select {
-	case msg, ok := <-mb.outbound:
-		return msg, ok
-	case <-mb.done:
-		return OutboundMessage{}, false
-	case <-ctx.Done():
-		return OutboundMessage{}, false
-	}
+func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
+	return mb.outbound
 }
 
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
-	mb.wg.Add(1)
-	defer mb.wg.Done()
-
-	if mb.closed.Load() {
-		return ErrBusClosed
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	select {
-	case mb.outboundMedia <- msg:
-		return nil
-	case <-mb.done:
-		return ErrBusClosed
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return publish(ctx, mb, mb.outboundMedia, msg)
 }
 
-func (mb *MessageBus) SubscribeOutboundMedia(ctx context.Context) (OutboundMediaMessage, bool) {
-	select {
-	case msg, ok := <-mb.outboundMedia:
-		return msg, ok
-	case <-mb.done:
-		return OutboundMediaMessage{}, false
-	case <-ctx.Done():
-		return OutboundMediaMessage{}, false
-	}
+func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
+	return mb.outboundMedia
 }
 
 func (mb *MessageBus) Close() {
-	if !mb.closed.CompareAndSwap(false, true) {
-		return
-	}
+	mb.closeOnce.Do(func() {
+		mb.closed.Store(true)
 
-	// Notify all Pub/Sub that i will be closing down
-	close(mb.done)
+		// notify all blocked publishers to exit
+		close(mb.done)
 
-	// Make sure all Pub was done
-	mb.wg.Wait()
+		// wait for all ongoing Publish calls to finish, ensuring all messages have been sent to channels or exited
+		mb.wg.Wait()
 
-	// Batch empty the chan
-	drained := 0
+		// close channels safely
+		close(mb.inbound)
+		close(mb.outbound)
+		close(mb.outboundMedia)
 
-	drained += drain(mb.inbound)
-	drained += drain(mb.outbound)
-	drained += drain(mb.outboundMedia)
-
-	if drained > 0 {
-		logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
-			"count": drained,
-		})
-	}
-}
-
-func drain[T any](ch <-chan T) int {
-	n := 0
-	for {
-		select {
-		case <-ch:
-			n++
-		default:
-			return n
+		// clean up any remaining messages in channels
+		drained := 0
+		for range mb.inbound {
+			drained++
 		}
-	}
+		for range mb.outbound {
+			drained++
+		}
+		for range mb.outboundMedia {
+			drained++
+		}
+
+		if drained > 0 {
+			logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
+				"count": drained,
+			})
+		}
+	})
 }
