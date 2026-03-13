@@ -88,10 +88,12 @@ func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
 
 func (mb *MessageBus) Close() {
 	mb.closeOnce.Do(func() {
-		mb.closed.Store(true)
-
 		// notify all blocked publishers to exit
 		close(mb.done)
+
+		// because every publisher will check mb.closed before acquiring wg
+		// so we can be sure that new publishers will not be added new messages after this point
+		mb.closed.Store(true)
 
 		// wait for all ongoing Publish calls to finish, ensuring all messages have been sent to channels or exited
 		mb.wg.Wait()
