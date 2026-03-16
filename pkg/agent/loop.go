@@ -309,7 +309,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 			}
 		default:
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Microsecond * 200)
 		}
 	}
 
