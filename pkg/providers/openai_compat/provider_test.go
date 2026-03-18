@@ -18,6 +18,48 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
+func TestProviderChat_MaxTokensFieldNull(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", WithMaxTokensField(""))
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"glm-4.7",
+		map[string]any{"max_tokens": 1234},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if _, ok := requestBody["max_tokens"]; !ok {
+		t.Fatalf("expected max_tokens in request body")
+	}
+}
+
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any
 
@@ -43,7 +85,7 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProvider("key", server.URL, "")
+	p := NewProvider("key", server.URL, "", WithMaxTokensField("max_completion_tokens"))
 	_, err := p.Chat(
 		t.Context(),
 		[]Message{{Role: "user", Content: "hi"}},
