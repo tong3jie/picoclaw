@@ -130,6 +130,7 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 		}
 	}
 
+	// Default to "max_tokens" if no custom field is set, since most APIs use that.
 	if p.maxTokensField == "" {
 		p.maxTokensField = "max_tokens"
 	}
