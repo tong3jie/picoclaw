@@ -46,6 +46,7 @@ var vendorPrefixes = map[string]struct{}{
 	"mistral":    {},
 	"vivgrid":    {},
 	"minimax":    {},
+	"novita":     {},
 }
 
 type Provider struct {
@@ -121,9 +122,7 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: retryClient.StandardClient(),
 	}
-
 	p.httpClient.Timeout = defaultRequestTimeout
-
 	for _, opt := range opts {
 		if opt != nil {
 			opt(p)
