@@ -71,6 +71,8 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	return func(p *Provider) {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
+		} else {
+			p.httpClient.Timeout = defaultRequestTimeout
 		}
 	}
 }
